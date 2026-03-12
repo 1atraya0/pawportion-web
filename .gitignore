@@ -1,0 +1,10 @@
+# Dependencies
+backend/node_modules/
+
+# Environment secrets – never commit these
+backend/.env
+.env
+
+# OS / editor noise
+.DS_Store
+Thumbs.db

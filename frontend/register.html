@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Register | Pawportion</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="auth.css">
+</head>
+<body>
+    <section class="auth-card">
+        <h1>🐾 Register Pet</h1>
+        <p class="auth-sub">Save pet name, breed, and profile image</p>
+
+        <form id="registerForm" class="form-grid">
+            <label for="petName">Pet Name</label>
+            <input id="petName" type="text" required>
+
+            <label for="petBreed">Breed</label>
+            <input id="petBreed" type="text" required>
+
+            <label for="petImage">Pet Picture</label>
+            <input id="petImage" type="file" accept="image/*">
+
+            <label for="email">Email</label>
+            <input id="email" type="email" required>
+
+            <label for="password">Password</label>
+            <input id="password" type="password" required>
+
+            <button type="submit">Register</button>
+        </form>
+
+        <p id="registerError" class="error"></p>
+
+        <p class="auth-link">Already registered? <a href="login.html">Go to login</a></p>
+    </section>
+
+    <script src="config.js"></script>
+    <script src="auth.js"></script>
+</body>
+</html>

@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pawportion Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css?v=20260312-7">
+</head>
+<body>
+    <main class="app-shell">
+        <header class="topbar">
+            <div class="brand-block">
+                <h1 class="brand-title">🐾Pawportion</h1>
+                <p class="brand-sub">Smart Pet Feeder</p>
+            </div>
+
+            <div class="profile-card">
+                <div class="profile-text">
+                    <span>Hi,</span>
+                    <strong id="profilePetName">Pet</strong>
+                    <small id="profileBreed">Breed</small>
+                </div>
+                <img id="profilePetImage" src="https://placehold.co/72x72/orange/white?text=🐶" alt="Pet profile image">
+                <button id="logoutBtn" class="logout-btn" type="button">Logout</button>
+            </div>
+        </header>
+
+        <section class="layout-grid">
+            <div class="left-col">
+                <article class="card mini-card">
+                    <h2>DEVICE SETTING :</h2>
+                    <div class="row-input">
+                        <label for="deviceIp">Device IP Address:</label>
+                        <input type="text" id="deviceIp" placeholder="192.168.1.100">
+                        <button id="updateIpBtn" class="pill">update</button>
+                    </div>
+                </article>
+
+                <article class="card controls-card">
+                    <div class="control-block">
+                        <h3>FOOD AMOUNT :</h3>
+                        <input type="range" id="foodAmount" min="1" max="20" value="5">
+                        <p class="line-value"><span id="foodAmountValue">5</span> portions</p>
+                    </div>
+
+                    <div class="control-block">
+                        <h3>SOUND TONE :</h3>
+                        <div class="tone-actions">
+                            <button id="chooseToneBtn" class="pill">choose</button>
+                            <button id="playTestBtn" class="pill">record</button>
+                        </div>
+                        <div class="tone-grid" id="toneGrid">
+                            <button class="tone-btn active" data-tone="1">1</button>
+                            <button class="tone-btn" data-tone="2">2</button>
+                            <button class="tone-btn" data-tone="3">3</button>
+                            <button class="tone-btn" data-tone="4">4</button>
+                            <button class="tone-btn" data-tone="5">5</button>
+                            <button class="tone-btn" data-tone="6">6</button>
+                            <button class="tone-btn" data-tone="7">7</button>
+                            <button class="tone-btn" data-tone="8">8</button>
+                            <button class="tone-btn" data-tone="9">9</button>
+                            <button class="tone-btn" data-tone="10">10</button>
+                        </div>
+                    </div>
+
+                    <div class="control-block">
+                        <h3>VOLUME :</h3>
+                        <input type="range" id="volumeSlider" min="0" max="100" value="25">
+                        <p class="line-value"><span id="volumeValue">25</span>%</p>
+                    </div>
+
+                    <button id="feedBtn" class="feed-btn">FEED NOW</button>
+                </article>
+            </div>
+
+            <div class="right-col">
+                <article class="card analysis-card">
+                    <h2>FEEDING ANALYSIS :</h2>
+                    <div class="analysis-content">
+                        <div class="chart-area">
+                            <p>Today’s Feedings :</p>
+                            <div class="pie-wrap">
+                                <div class="fake-pie" id="fakePie"></div>
+                                <ul class="legend">
+                                    <li><span class="l1"></span>Completed</li>
+                                    <li><span class="l2"></span>Failed</li>
+                                    <li><span class="l3"></span>Started</li>
+                                    <li><span class="l4"></span>Other</li>
+                                </ul>
+                            </div>
+                            <p class="total-fed">Total Fed Today : <span id="todayFoodAmount">0</span></p>
+                            <p class="last-fed-text">Last fed : <span id="lastFedTime">—</span></p>
+                        </div>
+
+                        <div class="bar-chart-area">
+                            <p>Last 7 Days :</p>
+                            <div class="bar-chart" id="barChart"></div>
+                            <div class="weekly-stats">
+                                <div class="stat-chip">
+                                    <span class="stat-val" id="weekTotal">0</span>
+                                    <span class="stat-lbl">this week</span>
+                                </div>
+                                <div class="stat-chip">
+                                    <span class="stat-val" id="weekAvg">0</span>
+                                    <span class="stat-lbl">avg / day</span>
+                                </div>
+                                <div class="stat-chip">
+                                    <span class="stat-val" id="weekFeedings">0</span>
+                                    <span class="stat-lbl">feedings</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </article>
+
+                <div class="bottom-cards">
+                    <article class="card status-card">
+                        <h2>CURRENT STATUS :</h2>
+                        <div class="status-lines">
+                            <p>Connection: <span id="statusText">Connecting...</span></p>
+                            <p>Food: <span id="statusFoodAmount">-</span></p>
+                            <p>Volume: <span id="statusVolume">-</span></p>
+                            <p>Tone: <span id="statusTone">-</span></p>
+                            <p>State: <span id="statusFeeding">Idle</span></p>
+                        </div>
+                    </article>
+
+                    <article class="card chat-center-card" id="openChatCard">
+                        <div class="chat-card-paw">🐾</div>
+                        <h2>ASK YOUR QUERY :</h2>
+                        <p class="chat-card-sub">AI-powered pet health &amp; care assistant</p>
+                        <div class="chat-card-cta">Chat Now &nbsp;💬</div>
+                    </article>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <div id="aiChatPopup" class="ai-chat-popup hidden" role="dialog" aria-label="PawDoc AI Assistant">
+        <div class="chat-header">
+            <div>
+                <h3>PawDoc AI</h3>
+                <p>Pet health and care assistant</p>
+            </div>
+            <button id="closeChatBtn" class="close-chat-btn">✕</button>
+        </div>
+        <div class="chat-messages" id="chatMessages">
+            <div class="msg bot">Hi! I am PawDoc 🐾. Ask me about your pet's health, feeding, nutrition, or behavior.</div>
+        </div>
+        <div class="chat-input-wrap">
+            <input id="chatInput" type="text" placeholder="Type your question...">
+            <button id="sendChatBtn">Send</button>
+        </div>
+    </div>
+
+    <script src="config.js"></script>
+    <script src="script.js?v=20260312-8"></script>
+</body>
+</html>

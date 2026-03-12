@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login | Pawportion</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="auth.css">
+</head>
+<body>
+    <section class="auth-card">
+        <h1>🐾 Pawportion Login</h1>
+        <p class="auth-sub">Login to your pet feeder dashboard</p>
+
+        <form id="loginForm" class="form-grid">
+            <label for="loginEmail">Email</label>
+            <input id="loginEmail" type="email" required>
+
+            <label for="loginPassword">Password</label>
+            <input id="loginPassword" type="password" required>
+
+            <button type="submit">Login</button>
+        </form>
+
+        <p id="loginError" class="error"></p>
+
+        <p class="auth-link">New here? <a href="register.html">Create account</a></p>
+    </section>
+
+    <script src="config.js"></script>
+    <script src="auth.js"></script>
+</body>
+</html>
