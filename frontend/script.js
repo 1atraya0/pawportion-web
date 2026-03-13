@@ -291,8 +291,9 @@ async function loadTodayAmount() {
 
         elements.todayFoodAmount.textContent = total;
         updatePieFromLogs(logs);
-        renderBarChart(dailyStatsDevice);
-        updateWeeklyStats(dailyStatsUser, logs);
+        const chartStats = (dailyStatsUser && dailyStatsUser.length > 0) ? dailyStatsUser : dailyStatsDevice;
+        renderBarChart(chartStats);
+        updateWeeklyStats(chartStats, logs);
     } catch (error) {
         elements.todayFoodAmount.textContent = '0';
     }
