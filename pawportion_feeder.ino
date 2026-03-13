@@ -1,6 +1,8 @@
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
 #include <WebServer.h>
 #include <ArduinoJson.h>
+#include <PubSubClient.h>
 #include <ESP32Servo.h>
 #include <DFRobotDFPlayerMini.h>
 #include <HardwareSerial.h>
@@ -9,8 +11,21 @@
 const char* ssid = "ATRAYA_ 2G";
 const char* password = "9073077466";
 
+// MQTT Configuration (HiveMQ Cloud)
+const char* mqttHost = "da57ed8087f449bba0a03deb6d2d6e00.s1.eu.hivemq.cloud";
+const int mqttPort = 8883;
+const char* mqttUser = "pawportion_device";
+const char* mqttPassword = "Paw12345678";
+const char* deviceId = "pawportion-001";
+
+String commandTopic = String("pawportion/device/") + deviceId + "/commands";
+String statusTopic = String("pawportion/device/") + deviceId + "/status";
+String heartbeatTopic = String("pawportion/device/") + deviceId + "/heartbeat";
+
 // Web Server on port 80
 WebServer server(80);
+WiFiClientSecure secureClient;
+PubSubClient mqttClient(secureClient);
 
 // Servo Configuration
 Servo myServo;
@@ -34,10 +49,8 @@ int foodAmount = 0;
 int selectedTone = 1;
 int volumeLevel = 25;
 bool isFeeding = false;
-
-// Backend Configuration
-const char* backendIP = "192.168.1.X"; // Update with your computer's IP
-const int backendPort = 5000;
+unsigned long lastHeartbeatMillis = 0;
+unsigned long lastMqttReconnectAttempt = 0;
 
 // ===========================
 // Setup Function
@@ -75,6 +88,12 @@ void setup() {
   // Connect to WiFi
   connectToWiFi();
 
+  // Configure secure MQTT client
+  secureClient.setInsecure();
+  mqttClient.setServer(mqttHost, mqttPort);
+  mqttClient.setCallback(handleMqttMessage);
+  connectToMQTT();
+
   // Setup Web Server Routes
   setupWebServer();
 
@@ -106,6 +125,142 @@ void connectToWiFi() {
     Serial.println();
     Serial.println("✗ Failed to connect to WiFi");
   }
+}
+
+void connectToMQTT() {
+  if (WiFi.status() != WL_CONNECTED) {
+    return;
+  }
+
+  Serial.print("☁ Connecting to HiveMQ Cloud: ");
+  Serial.println(mqttHost);
+
+  while (!mqttClient.connected()) {
+    String clientId = String(deviceId) + "-" + String((uint32_t)ESP.getEfuseMac(), HEX);
+    if (mqttClient.connect(clientId.c_str(), mqttUser, mqttPassword)) {
+      Serial.println("✓ MQTT connected");
+      mqttClient.subscribe(commandTopic.c_str());
+      publishStatus("mqtt_connected");
+      publishHeartbeat();
+      break;
+    }
+
+    Serial.print("✗ MQTT connect failed, rc=");
+    Serial.println(mqttClient.state());
+    delay(3000);
+  }
+}
+
+void handleMqttMessage(char* topic, byte* payload, unsigned int length) {
+  DynamicJsonDocument doc(512);
+  DeserializationError error = deserializeJson(doc, payload, length);
+
+  if (error) {
+    Serial.print("✗ MQTT JSON parse failed: ");
+    Serial.println(error.c_str());
+    return;
+  }
+
+  String commandType = doc["type"] | "";
+  Serial.print("📥 MQTT command received: ");
+  Serial.println(commandType);
+
+  if (commandType == "feed") {
+    if (doc.containsKey("amount")) {
+      int amount = doc["amount"].as<int>();
+      if (amount >= 0 && amount <= 20) {
+        foodAmount = amount;
+      }
+    }
+
+    if (doc.containsKey("tone")) {
+      int tone = doc["tone"].as<int>();
+      if (tone >= 1 && tone <= 10) {
+        selectedTone = tone;
+      }
+    }
+
+    if (doc.containsKey("volume")) {
+      int level = doc["volume"].as<int>();
+      if (level >= 0 && level <= 100) {
+        volumeLevel = level;
+        if (playerReady) {
+          player.volume(volumeLevel);
+        }
+      }
+    }
+
+    if (!isFeeding && foodAmount > 0) {
+      isFeeding = true;
+      feederState = STATE_OPENING;
+      startTime = millis();
+      myServo.write(90);
+      publishStatus("feeding_started");
+    }
+  } else if (commandType == "set_food_amount") {
+    int amount = doc["amount"] | foodAmount;
+    if (amount >= 0 && amount <= 20) {
+      foodAmount = amount;
+      publishStatus("food_amount_updated");
+    }
+  } else if (commandType == "set_tone") {
+    int tone = doc["tone"] | selectedTone;
+    if (tone >= 1 && tone <= 10) {
+      selectedTone = tone;
+      publishStatus("tone_updated");
+    }
+  } else if (commandType == "set_volume") {
+    int level = doc["volume"] | volumeLevel;
+    if (level >= 0 && level <= 100) {
+      volumeLevel = level;
+      if (playerReady) {
+        player.volume(volumeLevel);
+      }
+      publishStatus("volume_updated");
+    }
+  } else if (commandType == "play_sound") {
+    playSound();
+    publishStatus("sound_played");
+  } else if (commandType == "status_request") {
+    publishStatus("status_response");
+  }
+}
+
+void publishStatus(const char* eventType) {
+  if (!mqttClient.connected()) {
+    return;
+  }
+
+  DynamicJsonDocument doc(512);
+  doc["deviceId"] = deviceId;
+  doc["event"] = eventType;
+  doc["online"] = true;
+  doc["foodAmount"] = foodAmount;
+  doc["selectedTone"] = selectedTone;
+  doc["volumeLevel"] = volumeLevel;
+  doc["isFeeding"] = isFeeding;
+  doc["feederState"] = getFeederStateString();
+  doc["ip"] = WiFi.localIP().toString();
+
+  char buffer[512];
+  size_t len = serializeJson(doc, buffer, sizeof(buffer));
+  mqttClient.publish(statusTopic.c_str(), buffer, len);
+}
+
+void publishHeartbeat() {
+  if (!mqttClient.connected()) {
+    return;
+  }
+
+  DynamicJsonDocument doc(256);
+  doc["deviceId"] = deviceId;
+  doc["online"] = true;
+  doc["ip"] = WiFi.localIP().toString();
+  doc["rssi"] = WiFi.RSSI();
+
+  char buffer[256];
+  size_t len = serializeJson(doc, buffer, sizeof(buffer));
+  mqttClient.publish(heartbeatTopic.c_str(), buffer, len);
 }
 
 // ===========================
@@ -162,6 +317,7 @@ void handleFeed() {
   myServo.write(90);  // Open position
 
   Serial.println("🍽️ Feeding started");
+  publishStatus("feeding_started");
   sendJsonResponse(200, "success", "Feeding started");
 }
 
@@ -184,6 +340,8 @@ void handleFoodAmount() {
   Serial.print("📊 Food amount set to: ");
   Serial.println(foodAmount);
 
+  publishStatus("food_amount_updated");
+
   sendJsonResponse(200, "success", "Food amount set");
 }
 
@@ -205,6 +363,8 @@ void handleTone() {
   selectedTone = tone;
   Serial.print("🎵 Tone selected: ");
   Serial.println(selectedTone);
+
+  publishStatus("tone_updated");
 
   sendJsonResponse(200, "success", "Tone selected");
 }
@@ -233,6 +393,8 @@ void handleVolume() {
   Serial.print("🔊 Volume set to: ");
   Serial.println(volumeLevel);
 
+  publishStatus("volume_updated");
+
   sendJsonResponse(200, "success", "Volume set");
 }
 
@@ -244,6 +406,7 @@ void handlePlaySound() {
 
   sendJsonResponse(200, "success", "Playing sound");
   playSound();
+  publishStatus("sound_played");
 }
 
 void handleStatus() {
@@ -308,6 +471,7 @@ void updateFeeder() {
       isFeeding = false;
       Serial.println("✓ Feeding complete!");
       playSound();
+      publishStatus("feeding_completed");
       
       // Notify backend that feeding is complete
       notifyBackendFeedingComplete();
@@ -376,6 +540,26 @@ void notifyBackendFeedingComplete() {
 // ===========================
 
 void loop() {
+  if (WiFi.status() != WL_CONNECTED) {
+    connectToWiFi();
+  }
+
+  if (!mqttClient.connected()) {
+    unsigned long now = millis();
+    if (now - lastMqttReconnectAttempt > 5000) {
+      lastMqttReconnectAttempt = now;
+      connectToMQTT();
+    }
+  } else {
+    mqttClient.loop();
+  }
+
+  unsigned long now = millis();
+  if (now - lastHeartbeatMillis > 15000) {
+    lastHeartbeatMillis = now;
+    publishHeartbeat();
+  }
+
   server.handleClient();
   updateFeeder();
   delay(10);
@@ -388,9 +572,11 @@ SETUP INSTRUCTIONS:
    - ESP32Servo
    - DFRobotDFPlayerMini
    - ArduinoJson
-3. Update backendIP with your computer's IP address
-4. Set Device IP in web interface to match ESP32's IP
-5. Make sure the backend server is running before powering on the device
+  - PubSubClient
+3. Update `mqttUser` to your actual HiveMQ username
+4. Keep the HiveMQ password in `mqttPassword`
+5. Add matching MQTT credentials in your Railway backend
+6. Make sure the ESP32 has internet access before powering on the device
 
 PIN CONFIGURATION:
 - Servo: GPIO 13

@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
+const mqtt = require('mqtt');
 const crypto = require('crypto');
 require('dotenv').config();
 
@@ -8,6 +9,10 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 const GROQ_API_KEY = process.env.GROQ_API_KEY || '';
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
+const MQTT_HOST = process.env.MQTT_HOST || '';
+const MQTT_PORT = parseInt(process.env.MQTT_PORT || '8883', 10);
+const MQTT_USER = process.env.MQTT_USER || '';
+const MQTT_PASS = process.env.MQTT_PASS || '';
 
 // Database
 const db = require('./db');
@@ -26,6 +31,12 @@ app.use(express.json({ limit: '10mb' }));
 
 // Device ID (unique identifier for this feeder)
 const DEVICE_ID = process.env.DEVICE_ID || 'pawportion-001';
+const MQTT_DEVICE_ID = process.env.MQTT_DEVICE_ID || DEVICE_ID;
+const MQTT_ENABLED = Boolean(MQTT_HOST && MQTT_USER && MQTT_PASS);
+const mqttCommandTopic = `pawportion/device/${MQTT_DEVICE_ID}/commands`;
+const mqttStatusTopic = `pawportion/device/${MQTT_DEVICE_ID}/status`;
+const mqttHeartbeatTopic = `pawportion/device/${MQTT_DEVICE_ID}/heartbeat`;
+let mqttClient = null;
 
 // Store ESP32 device state
 const deviceState = {
@@ -35,15 +46,139 @@ const deviceState = {
   volumeLevel: 25,
   isFeeding: false,
   lastUpdate: new Date(),
-  status: 'offline'
+  status: 'offline',
+  mqttConnected: false
 };
 
 // ===========================
 // Helper Functions
 // ===========================
 
-// Send commands to ESP32
+const updateStateFromPayload = async (payload = {}, source = 'mqtt') => {
+  deviceState.foodAmount = payload.foodAmount ?? payload.food_amount ?? deviceState.foodAmount;
+  deviceState.selectedTone = payload.selectedTone ?? payload.selected_tone ?? deviceState.selectedTone;
+  deviceState.volumeLevel = payload.volumeLevel ?? payload.volume_level ?? deviceState.volumeLevel;
+  deviceState.isFeeding = payload.isFeeding ?? payload.is_feeding ?? deviceState.isFeeding;
+
+  if (payload.ip || payload.deviceIp) {
+    deviceState.ip = payload.ip || payload.deviceIp;
+  }
+
+  if (typeof payload.online === 'boolean') {
+    deviceState.status = payload.online ? 'online' : 'offline';
+  }
+
+  deviceState.lastUpdate = new Date();
+
+  await db.logDeviceStatus(DEVICE_ID, {
+    isOnline: deviceState.status === 'online',
+    ipAddress: deviceState.ip,
+    lastResponse: deviceState.lastUpdate,
+    metadata: { source, payload }
+  }).catch(err => console.error('DB Error:', err));
+};
+
+const connectMQTT = () => {
+  if (!MQTT_ENABLED || mqttClient) {
+    return;
+  }
+
+  mqttClient = mqtt.connect(`mqtts://${MQTT_HOST}:${MQTT_PORT}`, {
+    username: MQTT_USER,
+    password: MQTT_PASS,
+    reconnectPeriod: 5000,
+    connectTimeout: 15000
+  });
+
+  mqttClient.on('connect', () => {
+    deviceState.mqttConnected = true;
+    console.log(`✅ MQTT connected (${MQTT_HOST}:${MQTT_PORT})`);
+    mqttClient.subscribe([mqttStatusTopic, mqttHeartbeatTopic], (err) => {
+      if (err) {
+        console.error('MQTT subscribe error:', err.message);
+      }
+    });
+  });
+
+  mqttClient.on('reconnect', () => {
+    console.log('🔄 MQTT reconnecting...');
+  });
+
+  mqttClient.on('close', () => {
+    deviceState.mqttConnected = false;
+    console.log('⚠ MQTT disconnected');
+  });
+
+  mqttClient.on('error', (err) => {
+    deviceState.mqttConnected = false;
+    console.error('MQTT error:', err.message);
+  });
+
+  mqttClient.on('message', async (topic, messageBuffer) => {
+    try {
+      const payload = JSON.parse(messageBuffer.toString('utf8'));
+      if (topic === mqttStatusTopic || topic === mqttHeartbeatTopic) {
+        await updateStateFromPayload(payload, 'mqtt');
+      }
+    } catch (error) {
+      console.error('MQTT message parse error:', error.message);
+    }
+  });
+};
+
+const publishMqttCommand = (commandPayload) => {
+  return new Promise((resolve, reject) => {
+    if (!mqttClient || !deviceState.mqttConnected) {
+      return reject(new Error('MQTT is not connected'));
+    }
+
+    mqttClient.publish(mqttCommandTopic, JSON.stringify(commandPayload), { qos: 1 }, (err) => {
+      if (err) {
+        return reject(err);
+      }
+      resolve({ ok: true, via: 'mqtt' });
+    });
+  });
+};
+
+const mapEndpointToCommand = (endpoint, data = {}) => {
+  switch (endpoint) {
+    case '/api/feed':
+      return {
+        type: 'feed',
+        amount: data.amount ?? deviceState.foodAmount,
+        tone: data.tone ?? deviceState.selectedTone,
+        volume: data.volume ?? deviceState.volumeLevel
+      };
+    case '/api/food-amount':
+      return { type: 'set_food_amount', amount: data.amount };
+    case '/api/tone':
+      return { type: 'set_tone', tone: data.tone };
+    case '/api/volume':
+      return { type: 'set_volume', volume: data.level };
+    case '/api/play-sound':
+      return { type: 'play_sound' };
+    case '/api/status':
+      return { type: 'status_request' };
+    default:
+      return null;
+  }
+};
+
+// Send commands to ESP32 (MQTT preferred, HTTP fallback)
 const sendToESP32 = async (endpoint, data = {}) => {
+  if (MQTT_ENABLED && deviceState.mqttConnected) {
+    const commandPayload = mapEndpointToCommand(endpoint, data);
+    if (!commandPayload) {
+      throw new Error(`Unsupported command endpoint for MQTT: ${endpoint}`);
+    }
+
+    const response = await publishMqttCommand(commandPayload);
+    deviceState.status = 'online';
+    deviceState.lastUpdate = new Date();
+    return response;
+  }
+
   try {
     const url = `http://${deviceState.ip}${endpoint}`;
     const response = await axios.post(url, data, { timeout: 5000 });
@@ -108,6 +243,13 @@ const mapUserForClient = (user) => ({
 });
 
 const syncESP32Status = async () => {
+  if (MQTT_ENABLED && deviceState.mqttConnected) {
+    sendToESP32('/api/status', {}).catch((err) => {
+      console.error('MQTT status request failed:', err.message);
+    });
+    return deviceState;
+  }
+
   try {
     const response = await axios.get(`http://${deviceState.ip}/api/status`, { timeout: 3000 });
     const payload = response.data || {};
@@ -144,6 +286,9 @@ app.listen(PORT, async () => {
   console.log(`🐾 Pawportion Backend running on port ${PORT}`);
   console.log(`📡 ESP32 IP: ${deviceState.ip}`);
   console.log(`🔧 Device ID: ${DEVICE_ID}`);
+  if (MQTT_ENABLED) {
+    console.log(`☁ MQTT broker: ${MQTT_HOST}:${MQTT_PORT}`);
+  }
   
   // Initialize device in database
   try {
@@ -156,6 +301,8 @@ app.listen(PORT, async () => {
   } catch (error) {
     console.error('⚠️  Warning: Could not load device settings:', error.message);
   }
+
+  connectMQTT();
 });
 
 // ===========================
