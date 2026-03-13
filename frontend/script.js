@@ -279,9 +279,10 @@ async function loadTodayAmount() {
         const currentUser = requireLogin();
         if (!currentUser) return;
         const uid = currentUser.id;
-        const [logs, dailyStats] = await Promise.all([
+        const [logs, dailyStatsUser, dailyStatsDevice] = await Promise.all([
             apiCall('GET', `/api/feeding/logs?limit=200&userId=${uid}`),
-            apiCall('GET', `/api/feeding/stats/daily?days=7&userId=${uid}`).catch(() => [])
+            apiCall('GET', `/api/feeding/stats/daily?days=7&userId=${uid}`).catch(() => []),
+            apiCall('GET', '/api/feeding/stats/daily?days=7').catch(() => [])
         ]);
         const today = new Date().toDateString();
         const total = logs
@@ -290,8 +291,8 @@ async function loadTodayAmount() {
 
         elements.todayFoodAmount.textContent = total;
         updatePieFromLogs(logs);
-        renderBarChart(dailyStats);
-        updateWeeklyStats(dailyStats, logs);
+        renderBarChart(dailyStatsDevice);
+        updateWeeklyStats(dailyStatsUser, logs);
     } catch (error) {
         elements.todayFoodAmount.textContent = '0';
     }
