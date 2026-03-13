@@ -234,18 +234,27 @@ function updatePieFromLogs(logs) {
 
 function renderBarChart(dailyStats) {
     if (!elements.barChart) return;
+    const toLocalDateKey = (dateValue) => {
+        const d = new Date(dateValue);
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+    };
+
     const days = [];
     for (let i = 6; i >= 0; i--) {
         const d = new Date();
         d.setDate(d.getDate() - i);
         days.push({
             label: d.toLocaleDateString('en', { weekday: 'short' }).slice(0, 2),
-            dateStr: d.toISOString().slice(0, 10),
+            dateStr: toLocalDateKey(d),
             total: 0
         });
     }
     (dailyStats || []).forEach(row => {
-        const match = days.find(d => d.dateStr === String(row.date).slice(0, 10));
+        const rowDateKey = String(row.date).includes('T') ? String(row.date).split('T')[0] : toLocalDateKey(row.date);
+        const match = days.find(d => d.dateStr === rowDateKey);
         if (match) match.total = Number(row.total_food) || 0;
     });
     const maxTotal = Math.max(...days.map(d => d.total), 1);
@@ -291,9 +300,8 @@ async function loadTodayAmount() {
 
         elements.todayFoodAmount.textContent = total;
         updatePieFromLogs(logs);
-        const chartStats = (dailyStatsUser && dailyStatsUser.length > 0) ? dailyStatsUser : dailyStatsDevice;
-        renderBarChart(chartStats);
-        updateWeeklyStats(chartStats, logs);
+        renderBarChart(dailyStatsDevice);
+        updateWeeklyStats(dailyStatsDevice, logs);
     } catch (error) {
         elements.todayFoodAmount.textContent = '0';
     }
